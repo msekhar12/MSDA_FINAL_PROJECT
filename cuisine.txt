@@ -1,0 +1,85 @@
+id,name
+1,Afghan                                                                                                                                                
+2,African                                                                                                                                               
+3,American                                                                                                                                              
+4,Armenian                                                                                                                                              
+5,Asian                                                                                                                                                 
+6,Australian                                                                                                                                            
+7,Bagels/Pretzels                                                                                                                                       
+8,Bakery                                                                                                                                                
+9,Bangladeshi                                                                                                                                           
+10,Barbecue                                                                                                                                              
+11,"Bottled beverages, including water, sodas, juices, etc.                                                                                               "
+12,Brazilian                                                                                                                                             
+13,Cajun                                                                                                                                                 
+14,Californian                                                                                                                                           
+15,Caribbean                                                                                                                                             
+16,Chicken                                                                                                                                               
+17,Chilean                                                                                                                                               
+18,Chinese                                                                                                                                               
+19,Chinese/Cuban                                                                                                                                         
+20,Chinese/Japanese                                                                                                                                      
+21,Coffee/Tea                                                                                                                                            
+22,Continental                                                                                                                                           
+23,Creole                                                                                                                                                
+24,Creole/Cajun                                                                                                                                          
+25,Czech                                                                                                                                                 
+26,Delicatessen                                                                                                                                          
+27,Donuts                                                                                                                                                
+28,Eastern European                                                                                                                                      
+29,Egyptian                                                                                                                                              
+30,English                                                                                                                                               
+31,Ethiopian                                                                                                                                             
+32,Filipino                                                                                                                                              
+33,French                                                                                                                                                
+34,Fruits/Vegetables                                                                                                                                     
+35,German                                                                                                                                                
+36,Greek                                                                                                                                                 
+37,Hamburgers                                                                                                                                            
+38,Hawaiian                                                                                                                                              
+39,Hotdogs                                                                                                                                               
+40,Hotdogs/Pretzels                                                                                                                                      
+41,"Ice Cream, Gelato, Yogurt, Ices                                                                                                                       "
+42,Indian                                                                                                                                                
+43,Indonesian                                                                                                                                            
+44,Iranian                                                                                                                                               
+45,Irish                                                                                                                                                 
+46,Italian                                                                                                                                               
+47,Japanese                                                                                                                                              
+48,Jewish/Kosher                                                                                                                                         
+49,"Juice, Smoothies, Fruit Salads                                                                                                                        "
+50,Korean                                                                                                                                                
+51,"Latin (Cuban, Dominican, Puerto Rican, South & Central American)                                                                                      "
+52,Mediterranean                                                                                                                                         
+53,Mexican                                                                                                                                               
+54,Middle Eastern                                                                                                                                        
+55,Moroccan                                                                                                                                              
+56,Not Listed/Not Applicable                                                                                                                             
+57,Nuts/Confectionary                                                                                                                                    
+58,Other                                                                                                                                                 
+59,Pakistani                                                                                                                                             
+60,Pancakes/Waffles                                                                                                                                      
+61,Peruvian                                                                                                                                              
+62,Pizza                                                                                                                                                 
+63,Pizza/Italian                                                                                                                                         
+64,Polish                                                                                                                                                
+65,Polynesian                                                                                                                                            
+66,Portuguese                                                                                                                                            
+67,Russian                                                                                                                                               
+68,Salads                                                                                                                                                
+69,Sandwiches                                                                                                                                            
+70,Sandwiches/Salads/Mixed Buffet                                                                                                                        
+71,Scandinavian                                                                                                                                          
+72,Seafood                                                                                                                                               
+73,Soul Food                                                                                                                                             
+74,Soups                                                                                                                                                 
+75,Soups & Sandwiches                                                                                                                                    
+76,Southwestern                                                                                                                                          
+77,Spanish                                                                                                                                               
+78,Steak                                                                                                                                                 
+79,Tapas                                                                                                                                                 
+80,Tex-Mex                                                                                                                                               
+81,Thai                                                                                                                                                  
+82,Turkish                                                                                                                                               
+83,Vegetarian                                                                                                                                            
+84,Vietnamese/Cambodian/Malaysia                                                                                                                         
