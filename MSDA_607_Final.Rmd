@@ -1,0 +1,838 @@
+---
+title: "MSDA 607 Final project - Restaurants data analysis"
+author: "Sekhar Mekala"
+date: "Thursday, May 21, 2015"
+
+output:
+  html_document:
+  pandoc_args: [
+    "+RTS", "-K64m",
+    "-RTS"
+    ]
+--- 
+  
+#Project Requirements
+The website https://data.cityofnewyork.us provides several datasets related to New York city in various domains such as Health, Transportation, Education etc. One such data set related to health category is the "Restaurants" dataset. As per the web site (https://data.cityofnewyork.us), the Department of Health and Mental Hygiene conducts unannounced inspections of restaurants at least once a year. Inspectors check for compliance in food handling, food temperature, personal hygiene and vermin control. Each violation of a regulation gets a certain number of points. At the end of the inspection, the inspector totals the points, and this number is the restaurant's inspection score. The lower the score, the better the Grade
+
+The major requirements of this project are given below:
+
+**R1. Which factors affect the number of days between the inspections visit?**
+
+**R2. Which factors affect the restaurant's closure (in the current inspection)?**
+
+**R3. Which factors affect the restaurant's closure in future (in the next inspection)?**
+
+These three business requirements if correctly implemented, will help the restaurant owners to focus on the areas of improvement, and be prepared for sudden inspection by the food inspectors, and avoid possible closure of the restaurant. 
+
+
+#Data gathering
+The data is publicly available at the following web site:
+  https://data.cityofnewyork.us/Health/DOHMH-New-York-City-Restaurant-Inspection-Results/xx67-kt59
+
+#Technical design/requirements
+
+**T1. We will be implementing a RDBMS (Relational Database Management System) database in postgreSQL, following the principles of 1st, 2nd and 3rd normal forms. The RDBMS will help us to maintain the data in a structured format. Also given that the restaurant's data is updated frequently (almost daily) at  https://data.cityofnewyork.us, a RDBMS database will help us to store the data consistently for performing up to date analysis using our data analysis algorithms, and thus provide accurate predictions. NOTE that in the current scope of the project we will not be doing any on the fly analysis of the data. See T3 requirement given below, for more information.**
+
+**T2. ERWIN will be used to perform the RDBMS database design**
+
+**T3. The required CSV files for analysis are produced from the RDBMS database tables, and these CSV files will be stored at github.com. These files will be further used by R programs to transform the data to a proper format and perform data analysis and provide predictions (listed in R1 and R2 requirements)**
+
+**T4. Produce separate R data frames, for training, and one data frame (2015 data) for algorithm testing. The idea is to select the best statistical learning algorithms with the least MSE (Mean Squared Error)**
+
+**T5. Statistical models will be implemented using the training data, and their performance is evaluated using the test data. The training data belongs to all years before 2015, and the test data belongs to 2015 year**
+
+###T1/T2/T3 - RDBMS Design, implementation and final CSV files generation
+
+We will be creating the following RDBMS tables:
+
+* **ALL_DATA_DUMP**      - Contains all the data from https://data.cityofnewyork.us/Health/DOHMH-New-York-City-Restaurant-Inspection-Results/xx67-kt59
+
+* **VIOLATION**          - Contains all the possible violation codes, violation's description, and the level (critical/non-critical)
+
+* **CUISINE**            - Contains all the available cuisines
+
+* **RESTAURANT**         - Contains all the restaurants available, identified by restaurant ID
+
+* **RESTAURANT_CUISINE** - Contains restaurant's cuisine information (mapping between restaurants and cuisines) 
+
+* **INSPECTION**         - Restaurant's inspecton, violation, inspection date, score received, number of the visit (denoted by LEVEL) 
+
+Here is the database design (created using ERWIN):
+  
+  ![DB Design](C:\Users\Sekhar\Documents\CUNY\607 Assignments\Project_Final\DB_Design.png)
+
+**Figure: 1 Database Design**
+  
+  
+The SQL Statements can be found at the following location (under the file: SQL_Statements.txt):
+https://github.com/msekhar12/MSDA_FINAL_PROJECT
+
+The following three files are created (CSV Files) out of the SQL Statements provided at https://github.com/msekhar12/MSDA_FINAL_PROJECT (SQL_Statements.txt)
+
+The file names along with the attributes of the files data is described below:
+  
+* **inspection** file has the attributes **visit_level, restaurant_id, cuisine_id, inspection_date, closed, violation_code, score**
+  
+  **visit_level** - contains the inspection number
+
+  **restaurant_id** - unique ID of the restaurant
+
+  **cuisine_id** - Cuisine identifier
+
+  **inspection_date** - inspection date
+
+  **closed** - contains 1 or 0. 1 means the restaurant is closed and 0 mean the restaurant is not closed
+
+  **violation_code** - violation code
+
+  **score** - score received in the inspection
+
+
+* **violation_codes** file with the attributes **code,description,level**
+  
+  **code** - violation code
+
+  **description** - violation long description
+
+  **level** - Can be "Critical" or "Not critical"
+
+* **cuisine** file with the attributes **id,name**
+  
+  **id** - cuisine identifier
+
+  **name** - cuisine name
+
+
+The above three files are loaded at https://github.com/msekhar12/MSDA_FINAL_PROJECT. These files will be accessed and loaded into R data frames for further analysis.
+
+###T4 - Implementation (Data transformation and the creation of training and test datasets)
+
+
+####Required R libraries
+We need the following R libraries to perform data transformation and analysis
+```{r,results='hide'}
+library(RCurl)
+library(dplyr)
+library(tidyr)
+library(knitr)
+library(leaps)
+library(boot)
+library(FNN)
+library(ggplot2)
+library(MASS)
+```
+
+####Reading the data from github
+The following R code reads data from the 3 files (cuisine.txt, inspection.txt, violation_codes.txt) placed at "https://raw.githubusercontent.com/msekhar12/MSDA_FINAL_PROJECT/master/"
+
+
+```{r}
+URL <- "https://raw.githubusercontent.com/msekhar12/MSDA_FINAL_PROJECT/master/inspection.txt"
+x <- getURL(URL, ssl.verifypeer = FALSE )
+inspection_data <- read.csv(textConnection(x))
+
+kable(head(inspection_data))
+
+
+URL <- "https://raw.githubusercontent.com/msekhar12/MSDA_FINAL_PROJECT/master/cuisine.txt"
+x <- getURL(URL, ssl.verifypeer = FALSE )
+cuisine_data <- read.csv(textConnection(x))
+
+kable(head(cuisine_data))
+
+URL <- "https://raw.githubusercontent.com/msekhar12/MSDA_FINAL_PROJECT/master/violation_codes.txt"
+x <- getURL(URL, ssl.verifypeer = FALSE )
+violation_data <- read.csv(textConnection(x))
+
+kable(head(violation_data))
+
+```
+
+The **inspection_data** data frame contains the inspection details with the following variables:
+  
+* visit_level - The inspection number
+
+* restaurant_id - The restaurant ID (We are not concerned about the name)
+
+* cuisine_id - The cuisine of the restaurant. (we are not concerned with the name of the cuisine)
+
+* inspection_date - The date, when the restaurant was inspected
+
+* closed - will be either 1 or 0. 1 represents that the restaurant is closed, and 0 represents that it is not closed
+
+* violation_code - violation code (encoded)
+
+* score - restaurant's current score. Lesser the score, better is the restaurant
+
+The **cuisine_data** has the following cuisine details (variables):
+
+* id - Cuisine ID
+
+* name - Cuisine name
+
+The **violation_data** has the following variables:
+
+* code - Violation ID
+
+* description - Violation description
+
+* level - "Critical" and "Not Critical"
+
+####Data transfomation
+
+Creating **inspection_spread** data frame. This data frame will have the violation codes as the columns
+
+```{r}
+inspection_data$citation <- 1
+
+inspection_spread <- spread(inspection_data,violation_code, citation)
+
+#head(inspection_spread)
+#head(inspection_spread,100)
+
+#Filling NA values with 0, in the citation
+inspection_spread[is.na(inspection_spread)] <- 0
+
+names(inspection_spread) 
+
+dim(inspection_spread)
+
+#Changing the names of the columns where the names begin with a number. The citation codes begin with a number, but R does not support data frame column names beginning with a number
+#Execute this statement only once.  
+
+names(inspection_spread)[7:86] <- paste("C_",names(inspection_spread)[7:86],sep="")
+kable(head(inspection_spread))
+
+```
+
+To predict if a restaurant is closed in the next visit, we need to add a variable which contains the information, if a restaurant is closed in the next visit.
+R code to add **closed_next** variable to **inspection_spread** data frame is given below.
+
+```{r}
+closed_next <- vector(length=length(inspection_spread$closed))
+closed_next[1] <- NA
+closed_next[2:(length(inspection_spread$closed))] <- inspection_spread$closed[1:(length(inspection_spread$closed)-1)]
+#data.frame(inspection_spread$closed,closed_next)
+
+restaurant_id_tmp <- vector(length=length(inspection_spread$restaurant_id))
+restaurant_id_tmp[1] <- NA
+restaurant_id_tmp[2:(length(inspection_spread$restaurant_id))] <- inspection_spread$restaurant_id[1:(length(inspection_spread$restaurant_id)-1)]
+#data.frame(inspection_spread$restaurant_id,restaurant_id_tmp)
+
+inspection_spread <- cbind(inspection_spread, closed_next, restaurant_id_tmp)
+
+inspection_spread$closed_next[which(inspection_spread$restaurant_id != inspection_spread$restaurant_id_tmp)] <- NA
+
+#head(inspection_spread)
+#dim(inspection_spread) 
+inspection_spread <- inspection_spread[,-88]
+names(inspection_spread)[87] <- "closed_next"
+#names(inspection_spread)
+#head(inspection_spread,100)
+```
+
+
+To Predict the days between the visits...we need to add another variable called **days_diff** to **inspection_spread** data frame
+```{r}
+date_temp <- vector(length=length(inspection_spread$inspection_date))
+date_temp[1] <- NA
+date_temp[2:(length(inspection_spread$inspection_date))] <- as.character(inspection_spread$inspection_date[1:(length(inspection_spread$inspection_date)-1)])
+#data.frame(inspection_spread$inspection_date,date_temp)
+
+restaurant_id_tmp <- vector(length=length(inspection_spread$restaurant_id))
+restaurant_id_tmp[1] <- NA
+restaurant_id_tmp[2:(length(inspection_spread$restaurant_id))] <- inspection_spread$restaurant_id[1:(length(inspection_spread$restaurant_id)-1)]
+#data.frame(inspection_spread$restaurant_id,restaurant_id_tmp)
+
+df_tmp <- data.frame(inspection_spread$inspection_date,date_temp,inspection_spread$restaurant_id,restaurant_id_tmp)
+#names(df_tmp)
+#head(df_tmp)
+
+#Populating NA values to date_temp, when restaurant_id_tmp and inspection_spread.restaurant_id are not equal
+df_tmp$date_temp[which(df_tmp$inspection_spread.restaurant_id != df_tmp$restaurant_id_tmp)] <- NA
+#dim(df_tmp)
+#dim(inspection_spread)
+
+
+#Adding a days_diff variable to inspection_spread
+
+inspection_spread$days_diff <- as.integer(difftime(strptime(df_tmp$date_temp, format = "%Y-%m-%d"),
+strptime(df_tmp$inspection_spread.inspection_date, format = "%Y-%m-%d"),units="days")
+)
+
+#head(inspection_spread,10)
+
+```
+
+
+Adding the **year** and **month** variables to **inspection_spread** data frame. These variables will help us to separate the data into different data frames (for training and test data) depending on the year/month of the inspection
+
+```{r}
+y <- format(strptime(inspection_spread$inspection_date, format = "%Y-%m-%d"),"%Y")
+m <- format(strptime(inspection_spread$inspection_date, format = "%Y-%m-%d"),"%m")
+
+inspection_spread <- cbind(inspection_spread,year=y,month=m)
+
+#head(inspection_spread)
+```
+
+Displaying new columns (**closed_next, days_diff, year, month**) along with some other columns of the **inspection_spread**
+
+
+```{r}
+
+head(data.frame(visit_level=inspection_spread$visit_level, 
+restaurant_id=inspection_spread$restaurant_id, 
+cuisine_id=inspection_spread$cuisine_id, 
+inspection_date=inspection_spread$inspection_date,
+closed=inspection_spread$closed,
+closed_next=inspection_spread$closed_next,
+days_diff=inspection_spread$days_diff,
+score=inspection_spread$score,
+year=inspection_spread$year,
+month=inspection_spread$month),10) 
+
+
+```
+
+**Preparing R data frames for training and testing of statistical models**
+
+The following R code creates **days_diff_training** data frame, and **days_diff_testing** data frame. The **days_diff_training** data frame will have the daya related to all the years except the 2015 data. We will also eliminate unnecessary variables, which are not needed for creating the statistical models to predict **days_diff** variable output. The **days_diff** variable will have the predicted number of days, after which a sudden food inspection could happen. An error of 1 week is allowed in the prediction.
+
+```{r}
+days_diff_training <- inspection_spread[inspection_spread$year != 2015,]
+#days_diff_training$month <- as.integer(days_diff_training$month)
+#days_diff_training$year <- as.integer(as.character(days_diff_training$year))
+
+
+#Elimination variables restaurant_id, inspection_date and closed_next from the training data, since these are not needed for training
+#names(days_diff_training)
+days_diff_training <- days_diff_training[,c(-2, -4, -5, -87, -89, -90)]
+#names(days_diff_training)
+
+#Omitting the NA values from training data set:
+days_diff_training <- na.omit(days_diff_training)
+dim(days_diff_training)
+
+#Plotting the box plot
+ggplot(days_diff_training,aes(x=score,y=days_diff))+
+ geom_boxplot()
+
+#eliminating outliers (days_diff <= 365 is only correct data)
+days_diff_training <- days_diff_training[days_diff_training$days_diff <= 365,]
+days_diff_training <- days_diff_training[days_diff_training$days_diff != 0,]
+dim(days_diff_training)
+
+
+
+days_diff_testing <- inspection_spread[inspection_spread$year == 2015,]
+#days_diff_training$month <- as.integer(days_diff_training$month)
+#days_diff_training$year <- as.integer(as.character(days_diff_training$year))
+
+
+#Elimination variables restaurant_id, inspection_date and closed_next from the training data, since these are not needed for training
+#names(days_diff_testing)
+days_diff_testing <- days_diff_testing[,c(-2, -4, -5, -87, -89, -90)]
+#names(days_diff_testing)
+
+#
+
+days_diff_testing <- na.omit(days_diff_testing)
+#dim(days_diff_testing)
+
+days_diff_testing <- days_diff_testing[days_diff_testing$days_diff <= 365,]
+days_diff_testing <- days_diff_testing[days_diff_testing$days_diff != 0,]
+dim(days_diff_testing)
+
+kable(head(days_diff_testing))
+kable(head(days_diff_training))
+```
+
+```{r}
+ggplot(days_diff_training,aes(x=score,y=days_diff))+
+ geom_boxplot()
+```
+
+From the bar plot display, we can conclude that on an average the restaurant is visited for every 100 days (approximately)
+
+Thus we produced the following 2 data frames needed for the model implementation and testing for **days_diff** prediction.
+
+*  **days_diff_training**
+
+*  **days_diff_testing**
+
+
+###T5. Statistical model implementation and evaluation
+
+**Predicting the "days_diff" variable**
+
+In the **days_diff_training** we have 84 variables, including **days_diff** variable. We will use the **forward selection method**, and evaluate which variables are optimal for prediction, and eliminate the variables which are not really needed. The main draw back of this approach is we are assuming a linear model. But this will at least help us to eliminate some irrevelant variables. Once the important variables are obtained, we can create more models for various degrees of freedom and select the optimal method. We will also evaluate KNN's (K-Nearest Neighbors method) performance.
+
+```{r}
+
+set.seed(18)
+regfit.fwd <- regsubsets (days_diff~., data=days_diff_training, nvmax =83, method ="forward")
+reg.summary <- summary(regfit.fwd)
+
+summary(regfit.fwd)
+
+reg.summary$rsq
+
+plot(reg.summary$rsq,xlab="Number of variables", ylab="R-Square", type="l")
+points(1:83,reg.summary$rsq[1:83], col="red",cex=2,pch=20)
+
+```
+
+**Figure 2A: ** Plot between **Number of variables** and **R-Square** (forward variable selection method)
+
+```{r}
+
+set.seed(18)
+regfit.bkw <- regsubsets (days_diff~., data=days_diff_training, nvmax =83, method ="backward")
+reg.summary.bkw <- summary(regfit.bkw)
+
+summary(regfit.bkw)
+
+reg.summary.bkw$rsq
+
+plot(reg.summary.bkw$rsq,xlab="Number of variables", ylab="R-Square", type="l")
+points(1:83,reg.summary.bkw$rsq[1:83], col="red",cex=2,pch=20)
+
+```
+
+**Figure 2B: ** Plot between **Number of variables** and **R-Square** (backward variable selection)
+
+
+The Figure-2A/B above display that after approximately 12 variables, there is not really significant improvement in the R-Square (Greater the R-Square, better is the model). Now we will evaluate various models on the following 12 variables to improve the R-Square further. The following variables are obtained from the display obtained from the command "summary(regfit.fwd and regfit.bkw)". At the 12th row, where ever we see an "*", those 12 variables are selected. Here are those 12 variables. The same 12 variables are obtained in both forward and backward selection
+
+The following R code gives the description of the violation codes (which will be used as variables for evaluating days_diff)
+       
+```{r}
+
+rbind(
+       violation_data[violation_data$code == "000 ",],
+       violation_data[violation_data$code == "10F ",],
+       violation_data[violation_data$code == "06F ",],
+       violation_data[violation_data$code == "04A ",],
+       violation_data[violation_data$code == "04H ",],
+       violation_data[violation_data$code == "04L ",],
+       violation_data[violation_data$code == "04M ",],
+       violation_data[violation_data$code == "04N ",],
+       violation_data[violation_data$code == "02B ",],
+       violation_data[violation_data$code == "02G ",]
+)
+
+```
+         
+Let us pair plot the 12 variables along with the days_diff. This will help us, if we have any non-linear relationship with the days_diff and any of the 5 variables identified above.
+         
+```{r}
+
+plot(days_diff_training$visit_level,days_diff_training$days_diff,xlab="Visit Level",ylab="days_diff",col="green")
+temp_lm <- lm(days_diff_training$days_diff~days_diff_training$visit_level)
+abline(temp_lm,col="red")
+         
+plot(days_diff_training$score,days_diff_training$days_diff,xlab="Score",ylab="days_diff",col="green")
+temp_lm <- lm(days_diff_training$days_diff~days_diff_training$score)
+abline(temp_lm,col="red")
+         
+plot(days_diff_training$C_000,days_diff_training$days_diff,xlab="C_000",ylab="days_diff",col="blue")
+temp_lm <- lm(days_diff_training$days_diff~days_diff_training$C_000)
+abline(temp_lm,col="red")
+         
+         
+plot(days_diff_training$C_04L,days_diff_training$days_diff,xlab="C_04L",ylab="days_diff",col="blue")
+temp_lm <- lm(days_diff_training$days_diff~days_diff_training$C_04L)
+abline(temp_lm,col="red")
+       
+         
+plot(days_diff_training$C_10F,days_diff_training$days_diff,xlab="C_10F",ylab="days_diff",col="blue")
+temp_lm <- lm(days_diff_training$days_diff~days_diff_training$C_10F)
+abline(temp_lm,col="red")
+         
+
+plot(days_diff_training$C_06F,days_diff_training$days_diff,xlab="C_06F",ylab="days_diff",col="blue")
+temp_lm <- lm(days_diff_training$days_diff~days_diff_training$C_06F)
+abline(temp_lm,col="red")
+
+plot(days_diff_training$C_04A,days_diff_training$days_diff,xlab="C_04A",ylab="days_diff",col="blue")
+temp_lm <- lm(days_diff_training$days_diff~days_diff_training$C_04A)
+abline(temp_lm,col="red")
+
+
+plot(days_diff_training$C_04H,days_diff_training$days_diff,xlab="C_04H",ylab="days_diff",col="blue")
+temp_lm <- lm(days_diff_training$days_diff~days_diff_training$C_04H)
+abline(temp_lm,col="red")
+
+plot(days_diff_training$C_04M,days_diff_training$days_diff,xlab="C_04M",ylab="days_diff",col="blue")
+temp_lm <- lm(days_diff_training$days_diff~days_diff_training$C_04M)
+abline(temp_lm,col="red")
+
+plot(days_diff_training$C_04N,days_diff_training$days_diff,xlab="C_04N",ylab="days_diff",col="blue")
+temp_lm <- lm(days_diff_training$days_diff~days_diff_training$C_04N)
+abline(temp_lm,col="red")
+
+plot(days_diff_training$C_02B,days_diff_training$days_diff,xlab="C_02B",ylab="days_diff",col="blue")
+temp_lm <- lm(days_diff_training$days_diff~days_diff_training$C_02B)
+abline(temp_lm,col="red")
+
+plot(days_diff_training$C_02G,days_diff_training$days_diff,xlab="C_02G",ylab="days_diff",col="blue")
+temp_lm <- lm(days_diff_training$days_diff~days_diff_training$C_02G)
+abline(temp_lm,col="red")
+
+```
+         
+**Figure 3: ** Graphs showing the plots between **days_diff** and other selected variables 
+         
+From the above graphs display we can conclude that on an average, only score variable and days_diff have some strong relationship (inversely proportional). All other variables are not strongly related to **days_diff** variable. So let us just consider the **score** variable to predict the **days_diff**. This might be a very simple assumption for modelling a complex phenomenon, and thus increasing the bias. But as per the business requirement (R1) we have to find the most important variable to predict the **days_diff** value.
+
+####Cross validation to select a model with least Cross Validation error
+
+Now I will use the Cross Validation to get the Cross Validation error for a simple linear relationship and polynomial relationship between score and days_diff.
+We will consider the degree of polynomial for which the CV error is minimal. We will just run this testing on score variable only.
+
+**NOTE**: This R Code may run for a while
+
+```{r, warning=FALSE}
+         
+set.seed(18)
+#par(mfrow=c(1,1))
+
+cv.error.5 <- rep(0,5)
+for (i in 1:5)
+  {
+glm.fit <- glm((days_diff_training$days_diff~(I(days_diff_training$score^i))))
+
+#round(predict(glm.fit,data.frame(days_diff_training$score[1:10]))[1:10])
+#days_diff_training$days_diff[1:10]
+cv.error.5[i] <-  cv.glm(days_diff_training,glm.fit,K=5)$delta[1] 
+
+print(cv.error.5[i])
+}
+
+plot(1:5,cv.error.5,xlab="Degrees of freedom of score", ylab="CV Error", type="l")
+points(1:5,cv.error.5, col="red",cex=2,pch=20)
+```
+         
+**Figure 4: Cross validation error vs. "Score" variable's degree of freedom**
+
+From Figure 4, after 4 degrees of freedom, there is no significant decrease in the CV error. Hence we will consider **score** with 4 degrees of freedom to model the **days_diff** variable (days_diff is nothing but number of days from the current inspection date, after which the next inspection could happen). But note that the CV error of 11500 is still very high, but we can at least conclude that lesser the **score** larger the gap between successive inspections. The model we will consider is given below:
+
+```{r}
+  glm.fit <- glm((days_diff_training$days_diff~(I(days_diff_training$score^4))))
+```
+
+
+
+###Predicting the factors infulencing "closure" of restaurant
+
+**Using logistic regression to predict if a restaurant is closed**
+
+R Code to prepare required data frames (preparation of 2 data frames for training and testing):
+```{r}
+dim(inspection_spread)
+names(inspection_spread)
+closed_training <- inspection_spread[(inspection_spread$year!=2015),c(-2,-4,-87,-88,-89,-90)]
+closed_testing <- inspection_spread[(inspection_spread$year==2015),c(-2,-4,-87,-88,-89,-90)]
+```
+
+
+The R Code for logistic regression follows:
+
+```{r}
+glm.fit=glm(closed~.,
+data=closed_training,family =binomial )
+
+summary(glm.fit)
+
+```
+
+The above display shows lots of variables, have P-Value greater than 0.5%. Let us filter them:
+
+```{r}
+rownames(summary(glm.fit)$coeff[which(summary(glm.fit)$coeff[,4]<0.005),])[-1]
+```              
+
+Creating another model with just the above variables.
+
+
+```{r}
+glm.fit=glm(closed~visit_level+score +`C_02A `+`C_02B `+`C_02G `+`C_02H `+`C_03A `+`C_03B `+`C_03C `+`C_04A `+`C_04C `+`C_04F `+`C_04H `+`C_04J `+`C_04K `+`C_04L `+`C_04M `+`C_04N `+`C_05A `+`C_05D `+`C_05F `+`C_05H `+`C_06A `+`C_06C `+`C_06D `+`C_06E `+`C_06F `+`C_06G `+`C_07A `+`C_08A `+`C_08C `+`C_09C `+`C_10A `+`C_10B `+`C_10D `+`C_10F `+`C_10H `+`C_10J `,
+data=closed_training,family =binomial )
+
+```
+
+####Logistic model evaluation
+
+We will evaluate the model on the **closed_training** data.
+
+```{r}
+
+#The following commented R Code is tested on closed_testing. Since we are interested on training
+
+
+#glm.probs <- predict(glm.fit,type="response")
+#closed_training[which(glm.probs > 0.5),]
+#contrasts(as.factor(closed_training$closed))
+
+#glm.pred <- rep(0,nrow(closed_training))
+#glm.pred[glm.probs>0.7] <- 1
+#prop.table(table(glm.pred,closed_training$closed))
+#mean(glm.pred==closed_training$closed)
+
+#Evaluating the model performance on test data set:
+
+glm.probs <- predict(glm.fit,closed_testing,type="response")
+glm.pred <- rep(0,nrow(closed_testing))
+glm.pred[glm.probs>0.7] <- 1
+prop.table(table(glm.pred,closed_testing$closed))
+
+mean(glm.pred==closed_testing$closed)
+```
+
+The above display confirms that on the test data, 98.73% of the times, we can expect the model to correctly predict if a restaurant is closed. But this is not really the case, since the probability of getting a restaurant closed is very low, and hence even if we predict that the restaurant would never be closed, we still have more than 98% of the probability that our guess is correct. In fact our model has predicted only 16% (100 * 0.002148228/(0.002148228 + 0.011412460) = 16) of the test cases correctly, and 84% of the cases incorrectly. We will have to consider other models to evaluate if we can correctly predict the closure of the restaurant.
+
+####Let us use Linear discriminant analysis
+
+```{r}
+
+
+lda.fit <- lda(closed~visit_level+score +`C_02A `+`C_02B `+`C_02G `+`C_02H `+`C_03A `+`C_03B `+`C_03C `+`C_04A `+`C_04C `+`C_04F `+`C_04H `+`C_04J `+`C_04K `+`C_04L `+`C_04M `+`C_04N `+`C_05A `+`C_05D `+`C_05F `+`C_05H `+`C_06A `+`C_06C `+`C_06D `+`C_06E `+`C_06F `+`C_06G `+`C_07A `+`C_08A `+`C_08C `+`C_09C `+`C_10A `+`C_10B `+`C_10D `+`C_10F `+`C_10H `+`C_10J `,data=closed_training)
+
+#predict(lda.fit,closed_testing)$class
+prop.table(table(predict(lda.fit,closed_testing)$class,closed_testing$closed))
+
+mean(predict(lda.fit,closed_testing)$class==closed_testing$closed)
+
+```
+
+LDA (Linear Discriminant Analysis) looks promising. Since it is correctly predicts 75% of the test cases correctly (100 * 0.010204082/(0.010204082+0.003356606)). This means, out of the 100 closed restaurant cases, this LDA model predicts 75 cases correctly, and 25 cases incorrectly. Also this model predicts 97.4% of the cases correctly.
+
+
+####Let us use Quadratic Discriminant Analysis
+```{r}
+qda.fit <- qda(closed~visit_level+score +`C_02A `+`C_02B `+`C_02G `+`C_02H `+`C_03A `+`C_03B `+`C_03C `+`C_04A `+`C_04C `+`C_04F `+`C_04H `+`C_04J `+`C_04K `+`C_04L `+`C_04M `+`C_04N `+`C_05A `+`C_05D `+`C_05F `+`C_05H `+`C_06A `+`C_06C `+`C_06D `+`C_06E `+`C_06F `+`C_06G `+`C_07A `+`C_08A `+`C_08C `+`C_09C `+`C_10A `+`C_10B `+`C_10D `+`C_10F `+`C_10H `+`C_10J `,data=closed_training)
+
+#predict(qda.fit,closed_testing)$class
+prop.table(table(predict(qda.fit,closed_testing)$class,closed_testing$closed))
+
+mean(predict(qda.fit,closed_testing)$class==closed_testing$closed)
+```
+
+The QDA model has shown that approximately 68% of the closed test cases are correctly predicted. So this is not optimal, when compared to LDA. 
+
+**Hence we will use LDA model to predict if a restaurant will be closed, given the current variables**
+
+Our LDA model uses the following violation codes. These violation code descrption is also provided below:
+
+
+```{r}
+  rbind(
+       violation_data[violation_data$code == "02A ",],
+       violation_data[violation_data$code == "02B ",],
+       violation_data[violation_data$code == "02G ",],
+       violation_data[violation_data$code == "02H ",],
+       violation_data[violation_data$code == "03A ",],
+       violation_data[violation_data$code == "03B ",],
+       violation_data[violation_data$code == "03C ",],
+       violation_data[violation_data$code == "04A ",],
+       violation_data[violation_data$code == "04C ",],
+       violation_data[violation_data$code == "04F ",],
+       violation_data[violation_data$code == "04H ",],
+       violation_data[violation_data$code == "04J ",],
+       violation_data[violation_data$code == "04K ",],
+       violation_data[violation_data$code == "04L ",],
+       
+       violation_data[violation_data$code == "04M ",],
+       violation_data[violation_data$code == "04N ",],
+       violation_data[violation_data$code == "05A ",],
+       violation_data[violation_data$code == "05D ",], 
+       
+       violation_data[violation_data$code == "05F ",], 
+       violation_data[violation_data$code == "05H ",], 
+       violation_data[violation_data$code == "06A ",], 
+       violation_data[violation_data$code == "06C ",], 
+       violation_data[violation_data$code == "06D ",], 
+       violation_data[violation_data$code == "06E ",],
+       
+       violation_data[violation_data$code == "06F ",],
+       violation_data[violation_data$code == "06G ",],
+       violation_data[violation_data$code == "07A ",],
+       violation_data[violation_data$code == "08A ",],
+       violation_data[violation_data$code == "08C ",],
+
+       violation_data[violation_data$code == "09C ",],
+       violation_data[violation_data$code == "10A ",],
+       violation_data[violation_data$code == "10B ",],
+       violation_data[violation_data$code == "10D ",],
+       
+       violation_data[violation_data$code == "10F ",],
+       violation_data[violation_data$code == "10H ",],
+       violation_data[violation_data$code == "10J ",]
+       
+       
+)
+
+```
+
+
+###Predicting the factors infulencing "closure" of restaurant in "future"
+
+R Code to prepare required data frames (preparation of 2 data frames for training and testing):
+```{r}
+dim(inspection_spread)
+names(inspection_spread)
+closed_training <- inspection_spread[(inspection_spread$year!=2015),c(-2,-4,-88,-89,-90)]
+closed_testing <- inspection_spread[(inspection_spread$year==2015),c(-2,-4, -88,-89,-90)]
+
+```
+
+**Using logistic regression to predict if a restaurant is "closed in future", given the current variables**
+
+```{r}
+glm.fit=glm(closed_next~.,
+data=closed_training,family =binomial )
+
+summary(glm.fit)
+
+```
+
+The above display shows lots of variables, which have P-Value greater than 0.5%. Let us filter them:
+
+```{r}
+rownames(summary(glm.fit)$coeff[which(summary(glm.fit)$coeff[,4]<0.005),])[-1]
+```              
+
+Creating another model with just the above variables.
+
+
+```{r}
+glm.fit=glm(closed_next~closed+score +`C_000 `+`C_03D `+`C_04C `+`C_04H `+`C_04K `+`C_04L `+`C_04M `+`C_04N `+`C_06D `,
+data=closed_training,family =binomial )
+
+```
+
+
+
+####Logistic model evaluation to predict if a restaurant will be closed in future
+
+We will evaluate the model on the **closed_training** data.
+
+```{r}
+
+#The following commented R Code is tested on closed_testing. Since we are interested on training
+
+
+#glm.probs <- predict(glm.fit,type="response")
+#closed_training[which(glm.probs > 0.5),]
+#contrasts(as.factor(closed_training$closed))
+
+#glm.pred <- rep(0,nrow(closed_training))
+#glm.pred[glm.probs>0.7] <- 1
+#prop.table(table(glm.pred,closed_training$closed))
+#mean(glm.pred==closed_training$closed)
+
+#Evaluating the model performance on test data set:
+
+glm.probs <- predict(glm.fit,closed_testing,type="response")
+glm.pred <- rep(0,nrow(closed_testing))
+glm.pred[glm.probs>0.7] <- 1
+prop.table(table(glm.pred,closed_testing$closed))
+mean(glm.pred==closed_testing$closed)
+
+
+```
+
+The above output shows that the model predicts 98.64% correctly. But this is not really a good model, since it has predicted that none of the restaurants will be closed in future. This happened because, the probability of getting a restaurant closed is very low.
+
+Let us use LDA model
+
+
+```{r}
+
+
+lda.fit <- lda(closed_next~closed+score +`C_000 `+`C_03D `+`C_04C `+`C_04H `+`C_04K `+`C_04L `+`C_04M `+`C_04N `+`C_06D `,
+data=closed_training)
+
+#predict(lda.fit,closed_testing)$class
+prop.table(table(predict(lda.fit,closed_testing)$class,closed_testing$closed_next))
+
+
+
+```
+
+The LDA model predicts only 52.8% of the closed cases correctly. This model is not great at prediction, since even if we guess randomly, we will be 50% correct. Let us try another model (**QDA - Quadratic Descriminant Model**).
+
+
+```{r}
+
+qda.fit <- qda(closed_next~closed+score +`C_000 `+`C_03D `+`C_04C `+`C_04H `+`C_04K `+`C_04L `+`C_04M `+`C_04N `+`C_06D `,
+data=closed_training)
+
+#predict(qda.fit,closed_testing)$class
+prop.table(table(predict(qda.fit,closed_testing)$class,closed_testing$closed_next))
+
+
+```
+
+The ***quadatric discriminant model** is better than LDA, and it predicts approximately 58% of the closed cases correctly.
+
+**Using the KNN (K Nearest Neighbors)**
+
+```{r}
+names(closed_training)
+closed_training <- na.omit(closed_training)
+closed_testing <- na.omit(closed_testing)
+
+closed_testing_1 <- as.data.frame(cbind(closed_testing$closed_next,closed_testing$closed,closed_testing$score,closed_testing$C_000,closed_testing$C_03D,closed_testing$C_04C,closed_testing$C_04H,
+closed_testing$C_04K,closed_testing$C_04L,closed_testing$C_04M,closed_testing$C_04N,closed_testing$C_06D))
+
+names(closed_testing_1) <- c("closed_next","closed","score","C_000","C_03D","C_04C","C_04H","C_04K","C_04L","C_04M","C_04N","C_06D")
+
+closed_training_1 <- as.data.frame(cbind(closed_training$closed_next,closed_training$closed,closed_training$score,closed_training$C_000,closed_training$C_03D,closed_training$C_04C,closed_training$C_04H,
+closed_training$C_04K,closed_training$C_04L,closed_training$C_04M,closed_training$C_04N,closed_training$C_06D))
+
+names(closed_training_1) <- c("closed_next","closed","score","C_000","C_03D","C_04C","C_04H","C_04K","C_04L","C_04M","C_04N","C_06D")
+
+p <- vector(length=50)
+for(i in 1:50){
+knn.pred <- knn(closed_training_1[,-1],closed_testing_1[,-1],closed_training_1$closed_next,k=i)
+
+if(nrow(table(knn.pred,closed_testing_1$closed_next))==2)
+  {
+p[i] <- (table(knn.pred,closed_testing_1$closed_next)[2,2] / (table(knn.pred,closed_testing_1$closed_next)[2,2] + table(knn.pred,closed_testing_1$closed_next)[1,2])) * 100
+}
+else p[i] <- 0
+
+}
+
+which(max(p)==p)
+
+plot(1:50,p,xlab="K", ylab="Correct Predictions %", type="l")
+points(1:50,p, col="red",cex=2,pch=20)
+
+```
+
+**Figure: 5** Selecting the optimal K for KNN algorithm
+
+The above graph shows that a maximum of 13% cases be predicted correctly. This is pretty low, and the KNN model is not appropriate to predict if a restaurant will be closed in the next visit.
+
+Among all the models evaluated till now, only QDA is the best with 58% of the closed cases (in future) being correctly predicted.
+
+
+##Conclusions
+
+We can conclude the following:
+
+* We can use the **score** of the restaurant to predict when the next inspection could happen
+
+* Linear Discriminant Analysis is a good model, to predict if the restaurant gets closed (in the current inspection). It has successfully predicted 75% of the test cases (i. e., out of 100 closed restaurants, it has predicted 75 restaurants would be closed)
+
+* Quadratic Discriminant Analysis is a good model to predict if a restaurant would be closed in future, given the current restaurant score, and current citations
+
+
+
+
+<span style="color:blue; font-family:Georgia; font-size:2em;">
+                                                         -~-End of Project Report-~- 
+</span>                                                                

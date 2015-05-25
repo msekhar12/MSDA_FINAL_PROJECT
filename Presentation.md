@@ -1,0 +1,57 @@
+NY City Restaurant Data Analysis
+========================================================
+author: Sekhar Mekala
+date: 05/26/2015
+
+Data Source
+========================================================
+
+**Data Source** 
+
+- Data about NY City restaurants ratings, inspection details and citations is publicly available at 
+  https://data.cityofnewyork.us/Health/DOHMH-New-York-City-Restaurant-Inspection-Results/xx67-kt59
+- This data gets updated almost daily
+- Lower the restaurant's score, better is the restaurant
+- Each restaurant is inspected at least once an year and these happen suddenly, without any notice
+
+Business requirements
+========================================================
+- Which factor(s) affect the number of days between restaurant's inspection? 
+- Which factor(s) affect the closure of a restaurant, in the current inspection?
+- Which factors affect the closure of a restaurant, in the next inspection?
+- Can we predict the above three with some degree of certainity?
+
+Data Munging
+========================================================
+
+- Data is loaded into normalized RDBMS tables. RDBMS tables help us to manage the data efficiently, and these can be updated daily with new data
+- The data needed for analysis is obtained in the form of a CSV file(s) from RDBMS Tables
+- The CSV files obtained from RDBMS ate loaded at www.github.com. These files are accessed by R programs for data analysis
+- Data is transformed, and two types of data sets are produced for training and model testing
+- R language is used to transform the data to the required format (data frames)
+- The model training data is taken from all the years data except the data from 2015 year
+- The model testing data is taken from the 2015 year's data
+
+
+Model development and evaluation - I
+========================================================
+- Found that the "score" variable alone shows strong relationship with the days between the successive inspections
+
+![Score] (img.png)
+
+$$days=12.19-((2.859)(score^4)/(10^6))$$
+Slide With Plot
+
+Model development and evaluation - II
+========================================================
+- Predicting if a restaurant will be closed, based on the current citations, score and other variables
+![LDA] (LDA.png)
+
+LDA has better performance
+
+Model development and evaluation - III
+========================================================
+- Predicting if a restaurant will be closed in the next visit, based on the current citations, score and other variables
+![QDA] (QDA.png)
+
+QDA has better performance

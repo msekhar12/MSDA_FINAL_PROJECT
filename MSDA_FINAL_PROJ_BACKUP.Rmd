@@ -1,0 +1,524 @@
+---
+title: "MSDA 607 Final project - Restaurants data analysis"
+author: "Sekhar Mekala"
+date: "Thursday, May 21, 2015"
+
+output:
+  html_document:
+    pandoc_args: [
+      "+RTS", "-K64m",
+      "-RTS"
+    ]
+
+--- 
+
+#Project Requirements
+The website https://data.cityofnewyork.us provides several data related to New York city in various domains such as Health, Transportation, Education etc. One such data set related to health category is the "Restaurants" dataset. As per the web site (https://data.cityofnewyork.us), the Department of Health and Mental Hygiene conducts unannounced inspections of restaurants at least once a year. Inspectors check for compliance in food handling, food temperature, personal hygiene and vermin control. Each violation of a regulation gets a certain number of points. At the end of the inspection, the inspector totals the points, and this number is the restaurant's inspection score—the lower the score, the better the Grade
+
+The major requirements of this project are given below:
+
+**R1. Given the restaurant's current score, violations, number of times the restaurant has been visited by the inspectors, the restaurant's cuisine, is there any way we can predict the number of days after which the inspector inspects again? This need not be an exact estimation, an error of 1 week in the estimation is accetable.**
+
+**R2. Given the current violations of a restaurant, can we predict which violations are most probably found during the next inspection?**
+
+
+These two business requirements if correctly implemented, will help the restaurant owners to focus on the areas of improvement, and be prepared for sudden inspection by the food inspectors. The second requirement also helps the food inspectors to focus on specific possible violations, given a restaurant's current violations, score, cuisine etc. 
+
+
+#Data gathering
+The data is publicly available at the following web site:
+https://data.cityofnewyork.us/Health/DOHMH-New-York-City-Restaurant-Inspection-Results/xx67-kt59
+
+#Technical design/requirements
+
+**T1. We will be implementing a RDBMS (Relational Database Management System) database in postgreSQL, following the principles of 1st, 2nd and 3rd normal forms. The RDBMS will help us to maintain the data in a structured format. Also given that the restaurant's data is updated frequently (almost daily) at  https://data.cityofnewyork.us, a RDBMS database will help us to store the data consistently for performing up to date analysis using our data analysis algorithms, and thus provide accurate predictions.NOTE that in the current scope of the project we will not be doing any on the fly analysis of the data. See T3 requirement given below, for more information.**
+
+**T2. ERWIN will be used to perform the RDBMS database design**
+
+**T3. The required CSV files are produced from the RDBMS database tables, and will be stored at github.com. These files will be further used by R programs to transform the data to a proper format and perform data analysis and provide predictions (listed in R1 and R2 requirements)**
+
+**T4. Produce separate R data frames, for training, and one data frame (2015 data) for algorithm testing. The idea is to select the best algorithms with the least MSE (Mean Squared Error)**
+
+**T5. Statistical model implementation and evaluation**
+
+###T1/T2/T3 - RDBMS Design, implementation and final CSV files generation
+
+We will be creating the following RDBMS tables:
+
+* ALL_DATA_DUMP - Contains all the data from https://data.cityofnewyork.us/Health/DOHMH-New-York-City-Restaurant-Inspection-Results/xx67-kt59
+
+* VIOLATION - Contains all the possible violation codes, violation's description, and the level (critical/non-critical)
+
+* CUISINE - Contains all the available cuisines
+
+* RESTAURANT - Contains all the restaurants available, identified by restaurant ID
+
+* RESTAURANT_CUISINE - Contains restaurant's cuisine information (mapping between restaurants and cuisines) 
+
+* INSPECTION - Restaurant's inspecton, violation, inspection date, score received, number of the visit (denoted by LEVEL) 
+
+Here is the database design (created using ERWIN):
+
+![DB Design](C:\Users\Sekhar\Documents\CUNY\607 Assignments\Project_Final\DB_Design.png)
+
+**Figure: 1 Database Design**
+
+
+The SQL Statements can be found at the following location (under the file: SQL_Statements.txt):
+https://github.com/msekhar12/MSDA_FINAL_PROJECT
+
+The following three files are created (CSV Files) out of the SQL Statements provided at https://github.com/msekhar12/MSDA_FINAL_PROJECT (SQL_Statements.txt)
+
+The file names along with the attributes of the files data is described below:
+
+* **inspection** file has the attributes **visit_level, restaurant_id, cuisine_id, inspection_date, closed, violation_code, score**
+
+    **visit_level** - contains the inspection number
+    
+    **restaurant_id** - unique ID of the restaurant
+    
+    **cuisine_id** - Cuisine identifier
+    
+    **inspection_date** - inspection date
+    
+    **closed** - contains 1 or 0. 1 means the restaurant is closed and 0 mean the restaurant is not closed
+    
+    **violation_code** - violation code
+    
+    **score** - score received in the inspection
+    
+    
+* **violation_codes** file with the attributes **code,description,level**
+    
+    **code** - violation code
+    
+    **description** - violation long description
+    
+    **level** - Can be "Critical" or "Not critical"
+    
+* **cuisine** file with the attributes **id,name**
+
+    **id** - cuisine identifier
+    
+    **name** - cuisine name
+    
+
+The above three files are loaded at https://github.com/msekhar12/MSDA_FINAL_PROJECT. These files will be accessed and loaded into R data frames for further analysis.
+
+###T4 - Implementation (Data transformation and the creation of training and test datasets)
+
+
+####Required R libraries
+We need the following R libraries to perform data transformation and analysis
+```{r}
+library(RCurl)
+library(dplyr)
+library(tidyr)
+library(knitr)
+library(leaps)
+library(boot)
+library(FNN)
+```
+
+####Reading the data from github
+The following R code reads data from the 3 files (cuisine.txt, inspection.txt, violation_codes.txt) placed at "https://raw.githubusercontent.com/msekhar12/MSDA_FINAL_PROJECT/master/"
+
+
+```{r}
+URL <- "https://raw.githubusercontent.com/msekhar12/MSDA_FINAL_PROJECT/master/inspection.txt"
+x <- getURL(URL, ssl.verifypeer = FALSE )
+inspection_data <- read.csv(textConnection(x))
+
+kable(head(inspection_data))
+
+
+URL <- "https://raw.githubusercontent.com/msekhar12/MSDA_FINAL_PROJECT/master/cuisine.txt"
+x <- getURL(URL, ssl.verifypeer = FALSE )
+cuisine_data <- read.csv(textConnection(x))
+
+kable(head(cuisine_data))
+
+URL <- "https://raw.githubusercontent.com/msekhar12/MSDA_FINAL_PROJECT/master/violation_codes.txt"
+x <- getURL(URL, ssl.verifypeer = FALSE )
+violation_data <- read.csv(textConnection(x))
+
+kable(head(violation_data))
+
+```
+
+The **inspection_data** data frame contains the inspection details with the following variables:
+
+* visit_level - The inspection number
+
+* restaurant_id - The restaurant ID (We are not concerned about the name)
+
+* cuisine_id - The cuisine of the restaurant. (we are not concerned with the name of the cuisine)
+
+* inspection_date - The date, when the restaurant was inspected
+
+* closed - will be either 1 or 0. 1 represents that the restaurant is closed, and 0 represents that it is not closed
+
+* violation_code - violation code (encoded)
+
+* score - restaurant's current score. Lesser the score, better is the restaurant
+
+The **cuisine_data** has the following cuisine details (variables):
+
+* id - Cuisine ID
+
+* name - Cuisine name
+
+The **violation_data** has the following variables:
+
+* code - Violation ID
+
+* description - Violation description
+
+* level - "Critical" and "Not Critical"
+
+####Data transfomation
+
+Creating **inspection_spread** data frame. This data frame will have the violation codes as the columns
+
+```{r}
+inspection_data$citation <- 1
+
+inspection_spread <- spread(inspection_data,violation_code, citation)
+
+#head(inspection_spread)
+#head(inspection_spread,100)
+
+#Filling NA values with 0, in the citation
+inspection_spread[is.na(inspection_spread)] <- 0
+
+names(inspection_spread) 
+
+dim(inspection_spread)
+
+#Changing the names of the columns where the names begin with a number. The citation codes begin with a number, but R does not support data frame column names beginning with a number
+#Execute this statement only once.  
+
+names(inspection_spread)[7:86] <- paste("C_",names(inspection_spread)[7:86],sep="")
+kable(head(inspection_spread))
+
+```
+
+To predict if a restaurant is closed in the next visit, we need to add a variable which contains the information, if a restaurant is closed in the next visit.
+R code to add **closed_next** variable to **inspection_spread** data frame is given below.
+
+```{r}
+closed_next <- vector(length=length(inspection_spread$closed))
+closed_next[1] <- NA
+closed_next[2:(length(inspection_spread$closed))] <- inspection_spread$closed[1:(length(inspection_spread$closed)-1)]
+#data.frame(inspection_spread$closed,closed_next)
+
+restaurant_id_tmp <- vector(length=length(inspection_spread$restaurant_id))
+restaurant_id_tmp[1] <- NA
+restaurant_id_tmp[2:(length(inspection_spread$restaurant_id))] <- inspection_spread$restaurant_id[1:(length(inspection_spread$restaurant_id)-1)]
+#data.frame(inspection_spread$restaurant_id,restaurant_id_tmp)
+
+inspection_spread <- cbind(inspection_spread, closed_next, restaurant_id_tmp)
+
+inspection_spread$closed_next[which(inspection_spread$restaurant_id != inspection_spread$restaurant_id_tmp)] <- NA
+
+#head(inspection_spread)
+#dim(inspection_spread) 
+inspection_spread <- inspection_spread[,-88]
+names(inspection_spread)[87] <- "closed_next"
+#names(inspection_spread)
+#head(inspection_spread,100)
+```
+
+
+To Predict the days between the visits...we need to add another variable called days_diff to **inspection_spread**.
+```{r}
+date_temp <- vector(length=length(inspection_spread$inspection_date))
+date_temp[1] <- NA
+date_temp[2:(length(inspection_spread$inspection_date))] <- as.character(inspection_spread$inspection_date[1:(length(inspection_spread$inspection_date)-1)])
+#data.frame(inspection_spread$inspection_date,date_temp)
+
+restaurant_id_tmp <- vector(length=length(inspection_spread$restaurant_id))
+restaurant_id_tmp[1] <- NA
+restaurant_id_tmp[2:(length(inspection_spread$restaurant_id))] <- inspection_spread$restaurant_id[1:(length(inspection_spread$restaurant_id)-1)]
+#data.frame(inspection_spread$restaurant_id,restaurant_id_tmp)
+
+df_tmp <- data.frame(inspection_spread$inspection_date,date_temp,inspection_spread$restaurant_id,restaurant_id_tmp)
+#names(df_tmp)
+#head(df_tmp)
+
+#Populating NA values to date_temp, when restaurant_id_tmp and inspection_spread.restaurant_id are not equal
+df_tmp$date_temp[which(df_tmp$inspection_spread.restaurant_id != df_tmp$restaurant_id_tmp)] <- NA
+#dim(df_tmp)
+#dim(inspection_spread)
+
+
+#Adding a days_diff variable to inspection_spread
+
+inspection_spread$days_diff <- as.integer(difftime(strptime(df_tmp$date_temp, format = "%Y-%m-%d"),
+         strptime(df_tmp$inspection_spread.inspection_date, format = "%Y-%m-%d"),units="days")
+)
+
+#head(inspection_spread,10)
+
+```
+
+
+
+
+Adding the **year** and **month** variables to **inspection_spread** data frame. These variables will help us to separate the data into different data frames (for training and test data) depending on the year/month of the inspection
+
+```{r}
+y <- format(strptime(inspection_spread$inspection_date, format = "%Y-%m-%d"),"%Y")
+m <- format(strptime(inspection_spread$inspection_date, format = "%Y-%m-%d"),"%m")
+
+inspection_spread <- cbind(inspection_spread,year=y,month=m)
+
+#head(inspection_spread)
+```
+
+Displaying new columns (**closed_next, days_diff, year, month**) along with some other columns of the **inspection_spread**
+
+
+```{r}
+kable(head(data.frame(visit_level=inspection_spread$visit_level, 
+                restaurant_id=inspection_spread$restaurant_id, 
+                cuisine_id=inspection_spread$cuisine_id, 
+                inspection_date=inspection_spread$inspection_date,
+                closed=inspection_spread$closed,
+                closed_next=inspection_spread$closed_next,
+                days_diff=inspection_spread$days_diff,
+                score=inspection_spread$score,
+                year=inspection_spread$year,
+                month=inspection_spread$month),10) )
+     
+```
+
+**Preparing R data frames for training and testing of statistical models
+The following R code creates **days_diff_training** data frame, and **days_diff_testing** data frame. The **days_diff_training** data frame will have the daya related to all the years except the 2015 data. We will also eliminate unnecessary variables, which are not needed for creating the statistical models to predict **days_diff** variable output. The **days_diff** variable will have the predicted number of days, after which a sudden food inspection could happen. An error of 1 week is allowed in the prediction.
+
+```{r}
+days_diff_training <- inspection_spread[inspection_spread$year != 2015,]
+#days_diff_training$month <- as.integer(days_diff_training$month)
+#days_diff_training$year <- as.integer(as.character(days_diff_training$year))
+
+
+#Elimination variables restaurant_id, inspection_date and closed_next from the training data, since these are not needed for training
+#names(days_diff_training)
+days_diff_training <- days_diff_training[,c(-2, -4, -5, -87, -89, -90)]
+#names(days_diff_training)
+
+#Omitting the NA values from training data set:
+days_diff_training <- na.omit(days_diff_training)
+dim(days_diff_training)
+
+
+days_diff_testing <- inspection_spread[inspection_spread$year == 2015,]
+#days_diff_training$month <- as.integer(days_diff_training$month)
+#days_diff_training$year <- as.integer(as.character(days_diff_training$year))
+
+
+#Elimination variables restaurant_id, inspection_date and closed_next from the training data, since these are not needed for training
+#names(days_diff_testing)
+days_diff_testing <- days_diff_testing[,c(-2, -4, -5, -87, -89, -90)]
+#names(days_diff_testing)
+
+#
+
+days_diff_testing <- na.omit(days_diff_testing)
+#dim(days_diff_testing)
+
+
+kable(head(days_diff_testing))
+kable(head(days_diff_training))
+```
+
+Thus we produced the following 2 data frames needed for the model implementation and testing for **days_diff** prediction.
+
+*  **days_diff_training**
+
+*  **days_diff_testing**
+
+
+###T5. Statistical model implementation and evaluation
+
+**Predicting the "days_diff" variable**
+In the **days_diff_training** we have 84 variables, including **days_diff** variable. We will use the forward selection method, and evaluate which variables are optimal, and eliminate the variables which are not really needed. The main draw back of this approach is we are assuming linear model. But this will at least help us to eliminate some irrevelant variables. Once the important variables are obtained, we will create more models for various degrees of freedom and select the optimal method. We will also evaluate KNN (K-Nearest Neighbors method) performance.
+
+```{r}
+
+set.seed(18)
+regfit.fwd <- regsubsets (days_diff~., data=days_diff_training, nvmax =83, method ="forward")
+reg.summary <- summary(regfit.fwd)
+
+summary(regfit.fwd)
+
+reg.summary$rsq
+
+plot(reg.summary$rsq,xlab="Number of variables", ylab="R-Square", type="l")
+points(1:20,reg.summary$rsq[1:20], col="red",cex=2,pch=20)
+```
+**Figure 2: ** Plot between **Number of variables** and **R-Square**
+
+The Figure-2 above displays that after approximately 5 variables, there is not really significant improvement in R-Square (Greater the R-Square, better is the model). Now we will evaluate various models on the following 5 variables to improve the R-Square further. The following variables are obtained from the display obtained from the command "summary(regfit.fwd)". At the 5th row, where ever we see an "*", those 5 variables are selected. Here are those 5 variables
+
+* visit_level (This represents the number of the visit/inspection)
+* score (Restaurant's inspection score)
+* C_000 (If no violations are found, then it will have 1 or else 0)
+* C_04L (Evidence of mice or live mice present in facility's food and/or non-food areas)
+* C_10F (Non-food contact surface improperly constructed. Unacceptable material used. Non-food contact surface or equipment improperly maintained and/or not properly sealed, raised, spaced or movable to allow accessibility for cleaning on all sides, above and underneath the unit)
+
+**NOTE** The **violation_data** data frame has all the violation codes and descriptions. You may use the commands, as given below to find the violation codes (as per the need)
+
+```{r}
+violation_data[violation_data$code == "04L ",]
+violation_data[violation_data$code == "10F ",]
+```
+
+Let us pair plot the 5 variables along with the days_diff. This will help us, if we have any non-linear relationship with the days_diff and any of the 5 variables identified above.
+
+```{r}
+
+
+
+par(mfrow=c(3,2))
+
+plot(days_diff_training$visit_level,days_diff_training$days_diff,xlab="Visit Level",ylab="days_diff",col="green")
+temp_lm <- lm(days_diff_training$days_diff~days_diff_training$visit_level)
+abline(temp_lm,col="red")
+
+plot(days_diff_training$score,days_diff_training$days_diff,xlab="Score",ylab="days_diff",col="green")
+temp_lm <- lm(days_diff_training$days_diff~days_diff_training$score)
+abline(temp_lm,col="red")
+
+plot(days_diff_training$C_000,days_diff_training$days_diff,xlab="C_000",ylab="days_diff",col="blue")
+temp_lm <- lm(days_diff_training$days_diff~days_diff_training$C_000)
+abline(temp_lm,col="red")
+
+
+plot(days_diff_training$C_04L,days_diff_training$days_diff,xlab="C_04L",ylab="days_diff",col="blue")
+plot(days_diff_training$C_10F,days_diff_training$days_diff,xlab="C_10F",ylab="days_diff",col="blue")
+temp_lm <- lm(days_diff_training$days_diff~days_diff_training$C_10F)
+abline(temp_lm,col="red")
+
+```
+
+**Figure 3: ** Graphs showing the plots between **days_diff** and other selected variables 
+
+From the above display we can conclude that the score and days_diff are not linearly related. Also we can see that there is some strong relationship between the score, visit_level and the days_diff variables. Let us use a functional form by introducing interaction terms between score and other variables. We will use the glm() function (glm stands for Generalized Additive Models), evaluate the model with different degrees of freedom (by using the K-Fold cross validation), and choose the optimal degree of freedom. The R code is given below:
+
+The following R-Code is commented completely, since this will execute for a while, given the amount of training data we have.
+```{r}
+
+#cv.error.5 <- rep(0,5)
+
+#for (i in 1:5)
+#{
+#  print(i)
+#  glm.fit <-glm((days_diff_training$days_diff~(days_diff_training$visit_level+days_diff_training$C_000+days_diff_training$C_04L+days_diff_training$C_10F+days_diff_training$visit_level+days_diff_training$visit_level)*poly(days_diff_training$score,i, raw=TRUE)))
+    
+  
+#  cv.error.5[i] <- cv.glm(days_diff_training,glm.fit,K=5)$delta[1]
+#  print(cv.error.5[i])
+  
+  
+#}
+
+#cv.error.5
+
+#which(min(cv.error.5) == cv.error.5)
+```
+
+The above R code has given the following output:
+
+> cv.error.5
+[1] 19807.20 20314.38 20343.02 20428.05 20662.53
+
+The above output shows that the polynomial level of degree has the minimal cross validation error. So we will be using the following function to predict days_diff variable:
+
+```{r}
+glm.fit <-glm((days_diff_training$days_diff~(days_diff_training$visit_level+days_diff_training$C_000+days_diff_training$C_04L+days_diff_training$C_10F+days_diff_training$visit_level+days_diff_training$visit_level)*poly(days_diff_training$score,1, raw=TRUE)))
+
+glm.fit
+```
+
+**$$f(daysdiff)=268.8084-10.1992(visitlevel)-115.3469(C000)-72.8362(C04L)+25.2543(C10F)-6.7881(score)+0.3233(visitlevel)(score)+2.6036(C04L)(score)-0.6635(C10F)(score)$$**
+
+
+But as per our requirement, we can accept 1 week days of error in our prediction. So, if the actual value is within the 7 days of the predicted value, we have to treat the test observation as success.
+
+####Model evaluation
+
+Let us check what percentage of the test observations (present in **days_diff_testing** data frame) are correctly predicted with 7 days of error.
+
+head(days_diff_testing)
+Adding the days_diff_predicted variable to days_diff_testing
+days_diff_predicted <- (268.8084-10.1992*days_diff_testing$visit_level-115.3469*(days_diff_testing$C_000)-72.8362*(days_diff_testing$C_04L)+25.2543*(days_diff_testing$C_10F)-6.7881*(days_diff_testing$score)+0.3233*(days_diff_testing$visit_level)*(days_diff_testing$score)+2.6036*(days_diff_testing$C_04L)*(days_diff_testing$score)-0.6635*(days_diff_testing$C_10F)*(days_diff_testing$score))
+cbind(days_diff_testing,days_diff_predicted)
+
+
+###Trying with KNN
+days_diff_testing_std <- scale(days_diff_testing)
+as.data.frame(days_diff_testing_std) <- na.omit(days_diff_testing_std)
+days_diff_training_std <- scale(days_diff_training)
+knn.reg(days_diff_training_std[,-days_diff], test=NULL,days_diff_training_std$days_diff,k=3)
+
+rsq <- rep(0,30)
+for (i in 1:30)
+{
+k <- knn.reg(days_diff_training[,-84], test=NULL,days_diff_training$days_diff,k=i)
+rsq[i] <- k$R2
+print(i)
+print(rsq[i])
+}
+
+rsq
+
+
+rsq_1 <- rep(0,30)
+for (i in 1:30)
+{
+k <- knn.reg(days_diff_training[,-84], test=days_diff_testing[,-84],days_diff_training$days_diff,k=6, algorithm="kd_tree")
+k <- as.vector(k)
+k <- knn.reg(days_diff_training[,-84], test=days_diff_testing[,-84],days_diff_training$days_diff,k=6, algorithm="cover_tree")
+k <- knn.reg(days_diff_training[,-84], test=days_diff_testing[,-84],days_diff_training$days_diff,k=6, algorithm="brute")
+k[10]
+head(days_diff_testing)
+rsq_1[i] <- k$R2
+print(i)
+print(rsq_1[i])
+}
+
+rsq_1
+
+
+
+
+sel_train <- data.frame(days_diff=days_diff_training$days_diff,visit_level=days_diff_training$visit_level,C_000=days_diff_training$C_000,C_04L=days_diff_training$C_04L,C_10F=days_diff_training$C_10F,score=days_diff_training$score)
+
+
+sel_test <- data.frame(days_diff=days_diff_testing$days_diff,visit_level=days_diff_testing$visit_level,C_000=days_diff_testing$C_000,C_04L=days_diff_testing$C_04L,C_10F=days_diff_testing$C_10F,score=days_diff_testing$score)
+
+head(sel_test)
+head(sel_train)
+
+k_1 <- rep(0,30)
+k_2 <- rep(0,30)
+k_3 <- rep(0,30)
+
+for (i in 1:30)
+{
+#k <- knn.reg(sel_train[,-1], test=sel_train[,-1],set_test$days_diff,k=i, algorithm="kd_tree")
+k <- knn.reg(sel_train[,-1], test=NULL,set_test$days_diff,k=i, algorithm="kd_tree")
+k_1[i] k$R2
+#k <- knn.reg(days_diff_training[,-84], test=days_diff_testing[,-84],days_diff_training$days_diff,k=6, algorithm="cover_tree")
+k <- knn.reg(days_diff_training[,-84], test=NULL,days_diff_training$days_diff,k=6, algorithm="cover_tree")
+k_2[i] k$R2
+#k <- knn.reg(days_diff_training[,-84], test=days_diff_testing[,-84],days_diff_training$days_diff,k=6, algorithm="brute")
+k <- knn.reg(days_diff_training[,-84], test=NULL,days_diff_training$days_diff,k=6, algorithm="brute")
+k_3[i] k$R2
+
+print(i)
+print(K_1[i])
+print(K_2[i])
+print(K_3[i])
+}
