@@ -23,24 +23,31 @@ Business requirements
 
 Data Munging
 ========================================================
-
 - Data is loaded into normalized RDBMS tables. RDBMS tables help us to manage the data efficiently, and these can be updated daily with new data
 - The data needed for analysis is obtained in the form of a CSV file(s) from RDBMS Tables
 - The CSV files obtained from RDBMS ate loaded at www.github.com. These files are accessed by R programs for data analysis
 - Data is transformed, and two types of data sets are produced for training and model testing
+                      (...Cont)
+                      
+Data Munging
+========================================================
 - R language is used to transform the data to the required format (data frames)
 - The model training data is taken from all the years data except the data from 2015 year
 - The model testing data is taken from the 2015 year's data
 
 
+RDBMS Data Model
+========================================================
+![db] (DB_Design.png)
+
+
 Model development and evaluation - I
 ========================================================
 - Found that the "score" variable alone shows strong relationship with the days between the successive inspections
-
 ![Score] (img.png)
 
 $$days=12.19-((2.859)(score^4)/(10^6))$$
-Slide With Plot
+
 
 Model development and evaluation - II
 ========================================================
@@ -55,3 +62,10 @@ Model development and evaluation - III
 ![QDA] (QDA.png)
 
 QDA has better performance
+
+R Code
+========================================================
+RPUBS at http://www.rpubs.com/msekhar12/MSDA_607_Final_Project
+
+The source code and data files are present at the following location:
+https://github.com/msekhar12/MSDA_FINAL_PROJECT/tree/master
